@@ -1,3 +1,5 @@
+# This file will contain all of the scrapers for different websites.
+
 from seleniumbase import SB
 from random import random
 import logging
@@ -93,7 +95,7 @@ class bieniciScraper():
 
     def scrape(self):
         with SB(uc=True, headless=False, demo=True) as sb:
-            for x in range(1,2):
+            for x in range(1,101):
                 #There's 100 pages in BienIci
                 self.populate_property_list(x,sb)
             print(self.tiles)
@@ -103,5 +105,5 @@ class bieniciScraper():
                 propertyDict = self.cleanData(price, priceSquareMtr, size, rooms, bedrooms, soldby, address)
                 print(propertyDict)
 
-myinstance = bieniciScraper()
-myinstance.scrape()
+#myinstance = bieniciScraper()
+#myinstance.scrape()
