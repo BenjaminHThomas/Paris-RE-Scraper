@@ -26,7 +26,7 @@ def save_to_sql(table_name):
             logger.info("Created missing paris_RE database")
             conn.database = "paris_RE"
 
-    cur.execute("DROP TABLE IF EXISTS paris_RE") ## Temporary, only to be used during testing.
+    cur.execute(f"DROP TABLE IF EXISTS {table_name}") ## Temporary, only to be used during testing.
 
     ## Create the database if it doesn't exist
     cur.execute(f"""
