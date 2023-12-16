@@ -1,7 +1,6 @@
 # This file will contain all of the scrapers for different websites.
 
 from seleniumbase import SB
-from seleniumbase import Driver
 from bs4 import BeautifulSoup
 import random
 random.seed(1)
