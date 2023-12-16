@@ -10,7 +10,6 @@ import re
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
 class BieniciScraper():
     def __init__(self) -> None:
         self.tiles = []
@@ -82,7 +81,7 @@ class BieniciScraper():
     
     def extract_zip_code(self, zip_code) -> str:
         match = re.search(r'\b75\d{3}\b', zip_code)
-        return match.group() if match else None
+        return int(match.group()) if match else None
     
     def clean_numeric(self, value) -> float:
         value = value.replace("\xa0", "")
