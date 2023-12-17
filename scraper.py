@@ -26,7 +26,7 @@ class BieniciScraper():
         self.details_table_selector = 'allDetails'
         self.realtor_selector = 'agency-overview__info-name'
         self.zip_code_selector = 'fullAddress'
-        self.cleaned_data_dict = {}
+        self.cleaned_data_list = []
     
     def check_driver(self, url, sb, element) -> None:
         ## If the elements are not present, resets the chrome driver. Maximum 5 times.
@@ -99,9 +99,9 @@ class BieniciScraper():
             'size': size,
             'rooms': rooms,
             'bedrooms': bedrooms,
+            'bathrooms': bathrooms,
             'realtor': realtor,
             'zip_code': zip_code,
-            'bathrooms': bathrooms,
             'url': target_url,
         }
     
@@ -117,23 +117,25 @@ class BieniciScraper():
         price_square_mtr = self.clean_numeric(property_details_dict.get('price_square_mtr','').replace(",", "."))
         if "k" in property_details_dict['price_square_mtr']:
             price_square_mtr *= 1000
+        zip_code = self.extract_zip_code(property_details_dict.get('zip_code',''))
 
-        self.cleaned_data_dict = {
+        # self.tiles.extend([link.get('href') for link in soup.select(self.tile_selector)])
+        self.cleaned_data_list.extend({
             'price': self.clean_numeric(property_details_dict.get('price','').replace(" ", "")[:-1]),
             'price_square_mtr': price_square_mtr,
             'monthly_rent': self.clean_numeric(property_details_dict.get('monthly_rent','')),
             'size': self.clean_numeric(property_details_dict.get('size','')),
             'rooms': self.clean_numeric(property_details_dict.get('rooms','')),
             'bedrooms': self.clean_numeric(property_details_dict.get('bedrooms','')),
-            'realtor': property_details_dict.get('realtor',''),
-            'zip_code': self.extract_zip_code(property_details_dict.get('zip_code','')),
             'bathrooms': self.clean_numeric(property_details_dict.get('bathrooms','')),
+            'realtor': property_details_dict.get('realtor',''),
+            'zip_code': int(zip_code) if zip_code is not None else None,
             'url':property_details_dict.get('url'),
-        }
+        })
 
     def print_results(self):
         logger.info("Formatted scraping results:")
-        for key, value in self.cleaned_data_dict.items():
+        for key, value in self.cleaned_data_list[-1].items():
             logger.info(f"{key}: {value}")
 
     def scrape(self, buy_or_rent) -> None:
