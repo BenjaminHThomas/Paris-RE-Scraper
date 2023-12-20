@@ -6,6 +6,8 @@ logger = logging.getLogger(__name__)
 """
 Currently there's only one scraper, which is for BienIci.com.
 The only 2 valid inputs for the scrape function are 'buy' and 'rent'. 
+    - 'buy' extracts details from properties for sale. (price, price per metre squared, etc.)
+    - 'rent' extracts details from properties for rent. (monthly rent, etc.)
 
 It isn't mandatory to use both 'buy' and 'rent' as I've done below,
 but the intention is for the rent data to supplement the buy data.
@@ -18,7 +20,7 @@ before running the script, please ensure your .env file is set up with your mysq
 DB_HOST=localhost
 DB_USER=username
 DB_PASSWORD=password
-Also please tweak the settings in the settings.py file.
+Also, please tweak the settings in the settings.py file.
 
 If the script fails to scrape it's likely one of two things:
 - The website has changed and class names are different
