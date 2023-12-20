@@ -7,5 +7,5 @@ property_page_limit = 100
 ## Number of times the script tries to get a new 
 max_retry = 5
 
-## Insert your proxy settings here
+## Insert your proxy settings here, to be implemented later when needed
 proxy = {}
