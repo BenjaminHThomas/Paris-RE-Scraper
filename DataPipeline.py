@@ -3,6 +3,7 @@ import mysql.connector
 from dotenv import load_dotenv
 import os
 import logging
+import datetime
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -18,15 +19,14 @@ def save_to_sql(buy_or_rent, data_list):
     )
 
     cur = conn.cursor() ## The cursor is used to execute commands
-    try:
-        cur.execute(f"USE paris_RE")
-    except mysql.connector.Error as err:
-        if err.errno == mysql.connector.errorcode.ER_BAD_DB_ERROR:
-            cur.execute(f"CREATE DATABASE paris_RE")
-            logger.info("Created missing paris_RE database")
-            conn.database = "paris_RE"
 
-    cur.execute(f"DROP TABLE IF EXISTS {buy_or_rent}") ## Temporary, only to be used during testing.
+    try:
+        logger.info("Creating missing paris_RE database if missing...")
+        cur.execute('CREATE DATABASE IF NOT EXISTS paris_RE')
+    except mysql.connector.Error as err:
+        raise err("Cannot connect to SQL, please check .env settings.")
+
+    conn.database = "paris_RE"
 
     queries = {
         'buy':"""
@@ -50,23 +50,28 @@ def save_to_sql(buy_or_rent, data_list):
                 realtor VARCHAR(255),
                 zip_code INTEGER,
                 url VARCHAR(255),
+                timestamp TIMESTAMP,
                 PRIMARY KEY (id)
     )
     """)
 
     columns = {
-        'buy': ['price', 'price_square_mtr', 'size', 'rooms', 'bedrooms', 'bathrooms', 'realtor', 'zip_code', 'url'],
-        'rent':['monthly_rent', 'size', 'rooms', 'bedrooms', 'bathrooms', 'realtor', 'zip_code', 'url']
+        'buy': ['price', 'price_square_mtr', 'size', 'rooms', 'bedrooms', 'bathrooms', 'realtor', 'zip_code', 'url', 'timestamp'],
+        'rent':['monthly_rent', 'size', 'rooms', 'bedrooms', 'bathrooms', 'realtor', 'zip_code', 'url', 'timestamp']
     }
 
     values_placeholder = ', '.join(['%s'] * len(columns[buy_or_rent]))
     insert_query = f"INSERT INTO {buy_or_rent} ({', '.join(columns[buy_or_rent])}) VALUES ({values_placeholder})"
-
-    # Prepare the data as a list of tuples
-    data_tuples = [tuple(data_dict[col] for col in columns[buy_or_rent]) for data_dict in data_list]
     
-    # Execute the bulk insert
-    cur.executemany(insert_query, data_tuples)
+    # Fetch all existing url's from the table:
+    cur.execute(f'SELECT url FROM {buy_or_rent}')
+    existing_urls = [row[0] for row in cur.fetchall()]
+
+    for data_dict in data_list:
+        if data_dict['url'] not in existing_urls: ## don't insert the data if the url is already present
+            data_dict['timestamp'] = datetime.datetime.now()
+            data_tuple = tuple(data_dict[col] for col in columns[buy_or_rent]) ## convert dictionary of key:value pairs into tuple of values
+            cur.execute(insert_query, data_tuple)
 
     # Commit the changes to the database
     conn.commit()
@@ -75,28 +80,3 @@ def save_to_sql(buy_or_rent, data_list):
     cur.close()
     conn.close()
 
-# buy = [{'price': 1100000.0,
-# 'price_square_mtr': 10000.0,
-# 'monthly_rent': None,
-# 'size': 105.0,
-# 'rooms': 6.0,
-# 'bedrooms': 4.0,
-# 'bathrooms': 2.0,
-# 'realtor': 'DE FERLA IMMOBILIER',
-# 'zip_code': 75014,
-# 'url':'aaaaa.com',
-# }]
-#
-# rent = [{'price': None,
-# 'price_square_mtr': None,
-# 'monthly_rent': 1600,
-# 'size': 105.0,
-# 'rooms': 6.0,
-# 'bedrooms': 4.0,
-# 'bathrooms': 2.0,
-# 'realtor': 'DE FERLA IMMOBILIER',
-# 'zip_code': 75014,
-# 'url':'aaaaa.com',
-# }]
-#
-# save_to_sql('rent', rent)

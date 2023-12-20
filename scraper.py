@@ -8,6 +8,9 @@ random.seed(1)
 import logging
 import re
 
+from DataPipeline import save_to_sql
+import settings
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -33,7 +36,7 @@ class BieniciScraper():
         try:
             sb.wait_for_element_present(element, timeout=10)
         except NoSuchElementException:
-            for _ in range(6):
+            for _ in range(settings.max_retry+1):
                 if sb.is_element_present(element):
                     break
                 logging.warning("Retrying with new driver...")
@@ -57,14 +60,15 @@ class BieniciScraper():
         return monthly_rent
 
     def extract_details_buy(self, soup):
-        ## Header details
-        price = soup.find(class_=self.price_header_selector).text 
-        price_square_mtr = soup.find(class_=self.price_square_mtr_selector).text
+        price = soup.find(class_=self.price_header_selector)
+        price = price.get_text(strip = True) if price else ''
+        price_square_mtr = soup.find(class_=self.price_square_mtr_selector)
+        price_square_mtr = price_square_mtr.get_text(strip = True) if price_square_mtr else ''
         return price, price_square_mtr
 
     def extract_property_details(self, property_link, sb) -> dict:
         target_url = self.base_url+property_link
-        logger.info(f'Scraping: {target_url}')
+        logger.info(f"Starting next url...\n{target_url}\n")
         sb.get(target_url)
         self.check_driver(target_url, sb, '.'+self.price_header_selector)
         page_source = sb.get_page_source() 
@@ -120,7 +124,7 @@ class BieniciScraper():
         zip_code = self.extract_zip_code(property_details_dict.get('zip_code',''))
 
         # self.tiles.extend([link.get('href') for link in soup.select(self.tile_selector)])
-        self.cleaned_data_list.extend({
+        self.cleaned_data_list.append({
             'price': self.clean_numeric(property_details_dict.get('price','').replace(" ", "")[:-1]),
             'price_square_mtr': price_square_mtr,
             'monthly_rent': self.clean_numeric(property_details_dict.get('monthly_rent','')),
@@ -138,19 +142,38 @@ class BieniciScraper():
         for key, value in self.cleaned_data_list[-1].items():
             logger.info(f"{key}: {value}")
 
+    def process_data(self):
+        # Saves the scraped data in SQL
+        logger.info(f"Savings {len(self.cleaned_data_list)} results to database...")
+        save_to_sql(self.buy_or_rent, self.cleaned_data_list)
+        self.cleaned_data_list = [] 
+
     def scrape(self, buy_or_rent) -> None:
         if buy_or_rent not in ('rent', 'buy'):
             raise ValueError("Invalid input. Please provide either 'rent' or 'buy' to the scrape function")
         self.buy_or_rent = buy_or_rent # might reconsider this line, defining instance variables outside init isn't best practice
 
         with SB(uc=True, headless=True, demo=False) as sb:
-            for x in range(1,2):
-                ## There's 100 pages in BienIci
+            # Populate list of property url's
+            for x in range(1,settings.property_page_limit + 1):
+                logger.info(f"Scraping property listings from page {x} of BienIci...")
                 self.populate_property_list(x, sb)
-            for property_link in self.tiles:
-                property_details_dict = self.extract_property_details(property_link, sb)
+
+            # Loop through property urls and extract details of each one
+            for x in range(len(self.tiles)):
+                property_details_dict = self.extract_property_details(self.tiles[x], sb)
                 self.clean_data(property_details_dict)
                 self.print_results()
+                ## Save results to database every 5 properties
+                ## If you do this at the end and the script fails half-way through, you'll lose everything. Hence, every 5 properties.
+                if x % 5 == 0 and x > 0:
+                    self.process_data()
+
+        if len(self.cleaned_data_list):
+            self.process_data()
+        self.tiles = [] # remove properties that have been logged
+        logger.info("BienIci scraper finished.")
+
 
 #myinstance = BieniciScraper()
 #myinstance.scrape('buy')
