@@ -43,7 +43,7 @@ class BieniciScraper():
                 #sb.close() ## deprecated, need to find way to close previous browser
                 sb.get_new_driver(undetectable = True)
                 sb.get(url)
-                sb.sleep(3 + random.random)
+                sb.sleep(3 + random.random())
             if not sb.is_element_present(element):
                 logging.warning(f"Error: Unable to find element '{element}'. Please check proxy settings...")
     
@@ -77,7 +77,7 @@ class BieniciScraper():
         ## Property details table
         all_details_div = soup.find('div', class_=self.details_table_selector)
         size = all_details_div.find('div', string=lambda t: 'm²' in t if t else False)
-        size = size.get_text(strip=True) if size else ''
+        size = size.get_text(strip=True).replace(",",".") if size else ''
         rooms = all_details_div.find('div', string=lambda t: 'pièce' in t if t else False)
         rooms = rooms.get_text(strip=True) if rooms else ''
         bedrooms = all_details_div.find('div', string=lambda t: 'chambre' in t if t else False)
@@ -113,6 +113,15 @@ class BieniciScraper():
         match = re.search(r'\b75\d{3}\b', zip_code)
         return int(match.group()) if match else None
     
+    def clean_price_range(self, price_str) -> float:
+        ## To be used when a price range is given for a property.
+        ## For example: "495 000 à 2 100 000 €" or "500 - 1000"
+        cleaned_prices = re.split('à|-', price_str) # à is French for "to". à and - suggest a range of prices.
+        cleaned_prices = [re.sub(r"[^\d.]", "", num) for num in cleaned_prices] # remove non-digits
+        cleaned_prices = [float(num) for num in cleaned_prices if float(num) > 0] # convert digits to floats
+        average_price = sum(cleaned_prices) / len(cleaned_prices) 
+        return average_price
+    
     def clean_numeric(self, value) -> float:
         value = value.replace("\xa0", "")
         return float(re.sub(r"[^\d.]", "", value)) if value else None
@@ -123,9 +132,15 @@ class BieniciScraper():
             price_square_mtr *= 1000
         zip_code = self.extract_zip_code(property_details_dict.get('zip_code',''))
 
+        price = property_details_dict.get('price','')
+        if any(char in price for char in ['à','-']): # if a range of prices is given
+            price = self.clean_price_range(price) # will return the average price of the range
+        else:
+            price = self.clean_numeric(price)
+
         # self.tiles.extend([link.get('href') for link in soup.select(self.tile_selector)])
         self.cleaned_data_list.append({
-            'price': self.clean_numeric(property_details_dict.get('price','').replace(" ", "")[:-1]),
+            'price': price,
             'price_square_mtr': price_square_mtr,
             'monthly_rent': self.clean_numeric(property_details_dict.get('monthly_rent','')),
             'size': self.clean_numeric(property_details_dict.get('size','')),

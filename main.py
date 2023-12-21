@@ -32,7 +32,7 @@ You can validate this by inspecting the webpage and searching for the missing el
 
 if __name__ == '__main__':
     myinstance = scraper.BieniciScraper()
-    logger.info("Commencing the scraping of properties for sale...")
-    myinstance.scrape('buy')
+    # logger.info("Commencing the scraping of properties for sale...")
+    # myinstance.scrape('buy')
     logger.info("Commencing the scraping of the properties for rent...")
     myinstance.scrape('rent')
