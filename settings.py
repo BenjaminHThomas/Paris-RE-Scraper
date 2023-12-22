@@ -4,6 +4,9 @@
 ## There's 100 pages in BienIci
 property_page_limit = 100
 
+## Headless determines whether or not the browser window is invisible. (useful for testing)
+headless = True
+
 ## Number of times the script tries to get a new 
 max_retry = 5
 

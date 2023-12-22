@@ -32,7 +32,7 @@ class BieniciScraper():
         self.cleaned_data_list = []
     
     def check_driver(self, url, sb, element) -> None:
-        ## If the elements are not present, resets the chrome driver. Maximum 5 times.
+        ## If the element is not present, resets the chrome driver.
         try:
             sb.wait_for_element_present(element, timeout=10)
         except NoSuchElementException:
@@ -45,7 +45,7 @@ class BieniciScraper():
                 sb.get(url)
                 sb.sleep(3 + random.random())
             if not sb.is_element_present(element):
-                logging.warning(f"Error: Unable to find element '{element}'. Please check proxy settings...")
+                raise ConnectionError(f"Error: Unable to find element '{element}'. Please check proxy settings...")
     
     def populate_property_list(self, page, sb) -> None:
         target_url = self.base_url + self.url_ext[self.buy_or_rent] + str(page)
@@ -152,35 +152,43 @@ class BieniciScraper():
             'url':property_details_dict.get('url'),
         })
 
-    def print_results(self):
+    def print_results(self) -> None:
         logger.info("Formatted scraping results:")
         for key, value in self.cleaned_data_list[-1].items():
             logger.info(f"{key}: {value}")
 
-    def process_data(self):
+    def process_data(self) -> None:
         # Saves the scraped data in SQL
         logger.info(f"Savings {len(self.cleaned_data_list)} results to database...")
         save_to_sql(self.buy_or_rent, self.cleaned_data_list)
         self.cleaned_data_list = [] 
+
+    def validate_url(self, url_string, page_num) -> bool:
+        ## If there's only 50 pages and you enter page 100 into the url it will go to page 50
+        ## this functions checks if you've run out of pages to scrape.
+        url_page_num = url_string[-len(str(page_num)):]
+        return url_page_num == str(page_num)
 
     def scrape(self, buy_or_rent) -> None:
         if buy_or_rent not in ('rent', 'buy'):
             raise ValueError("Invalid input. Please provide either 'rent' or 'buy' to the scrape function")
         self.buy_or_rent = buy_or_rent # might reconsider this line, defining instance variables outside init isn't best practice
 
-        with SB(uc=True, headless=True, demo=False) as sb:
-            # Populate list of property url's
+        with SB(uc=True, headless=settings.headless, demo=False) as sb:
+            ## Populate list of property url's
             for x in range(1,settings.property_page_limit + 1):
                 logger.info(f"Scraping property listings from page {x} of BienIci...")
                 self.populate_property_list(x, sb)
+                current_url = sb.get_current_url()
+                if not self.validate_url(current_url, x):
+                    break
 
-            # Loop through property urls and extract details of each one
+            ## Loop through property urls and extract details of each one
             for x in range(len(self.tiles)):
                 property_details_dict = self.extract_property_details(self.tiles[x], sb)
                 self.clean_data(property_details_dict)
                 self.print_results()
                 ## Save results to database every 5 properties
-                ## If you do this at the end and the script fails half-way through, you'll lose everything. Hence, every 5 properties.
                 if x % 5 == 0 and x > 0:
                     self.process_data()
 
@@ -188,7 +196,3 @@ class BieniciScraper():
             self.process_data()
         self.tiles = [] # remove properties that have been logged
         logger.info("BienIci scraper finished.")
-
-
-#myinstance = BieniciScraper()
-#myinstance.scrape('buy')

@@ -21,7 +21,6 @@ def save_to_sql(buy_or_rent, data_list):
     cur = conn.cursor() ## The cursor is used to execute commands
 
     try:
-        logger.info("Creating missing paris_RE database if missing...")
         cur.execute('CREATE DATABASE IF NOT EXISTS paris_RE')
     except mysql.connector.Error as err:
         raise err("Cannot connect to SQL, please check .env settings.")
@@ -72,6 +71,8 @@ def save_to_sql(buy_or_rent, data_list):
             data_dict['timestamp'] = datetime.datetime.now()
             data_tuple = tuple(data_dict[col] for col in columns[buy_or_rent]) ## convert dictionary of key:value pairs into tuple of values
             cur.execute(insert_query, data_tuple)
+        else: 
+            logger.info(f'url already present in database, skipping: {data_dict['url']}')
 
     # Commit the changes to the database
     conn.commit()
