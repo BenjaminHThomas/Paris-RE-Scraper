@@ -118,7 +118,7 @@ class BieniciScraper():
         ## For example: "495 000 à 2 100 000 €" or "500 - 1000"
         cleaned_prices = re.split('à|-', price_str) # à is French for "to". à and - suggest a range of prices.
         cleaned_prices = [re.sub(r"[^\d.]", "", num) for num in cleaned_prices] # remove non-digits
-        cleaned_prices = [float(num) for num in cleaned_prices if float(num) > 0] # convert digits to floats
+        cleaned_prices = [float(num) for num in cleaned_prices if num and float(num) > 0] # convert digits to floats
         average_price = sum(cleaned_prices) / len(cleaned_prices) 
         return average_price
     
