@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 # Load environment variables from the .env file
 load_dotenv()
 
-def save_to_sql(buy_or_rent, data_list):
+def save_to_sql(db_name:str, table_name:str, data_list:list, buy_or_rent:str) -> None:
     conn = mysql.connector.connect(
         host = os.getenv('DB_HOST'),
         user = os.getenv('DB_USER'),
@@ -21,11 +21,11 @@ def save_to_sql(buy_or_rent, data_list):
     cur = conn.cursor() ## The cursor is used to execute commands
 
     try:
-        cur.execute('CREATE DATABASE IF NOT EXISTS paris_RE')
+        cur.execute(f'CREATE DATABASE IF NOT EXISTS {db_name}')
     except mysql.connector.Error as err:
-        raise err("Cannot connect to SQL, please check .env settings.")
+        raise err(f"Cannot connect to SQL database {db_name}, please check .env settings.")
 
-    conn.database = "paris_RE"
+    conn.database = db_name
 
     queries = {
         'buy':"""
@@ -39,7 +39,7 @@ def save_to_sql(buy_or_rent, data_list):
 
     ## Create the table if it doesn't exist
     cur.execute(f"""
-    CREATE TABLE IF NOT EXISTS {buy_or_rent}(
+    CREATE TABLE IF NOT EXISTS {table_name}(
                 id int NOT NULL auto_increment,
                 {queries[buy_or_rent]},
                 size DECIMAL,
@@ -47,32 +47,26 @@ def save_to_sql(buy_or_rent, data_list):
                 bedrooms DECIMAL,
                 bathrooms DECIMAL,
                 realtor VARCHAR(255),
-                zip_code INTEGER,
+                zip_code VARCHAR(255),
                 url VARCHAR(255),
+                property_id VARCHAR(255),
                 timestamp TIMESTAMP,
                 PRIMARY KEY (id)
     )
     """)
 
     columns = {
-        'buy': ['price', 'price_square_mtr', 'size', 'rooms', 'bedrooms', 'bathrooms', 'realtor', 'zip_code', 'url', 'timestamp'],
-        'rent':['monthly_rent', 'size', 'rooms', 'bedrooms', 'bathrooms', 'realtor', 'zip_code', 'url', 'timestamp']
+        'buy': ['price', 'price_square_mtr', 'size', 'rooms', 'bedrooms', 'bathrooms', 'realtor', 'zip_code', 'url', 'property_id', 'timestamp'],
+        'rent':['monthly_rent', 'size', 'rooms', 'bedrooms', 'bathrooms', 'realtor', 'zip_code', 'url', 'property_id', 'timestamp']
     }
 
     values_placeholder = ', '.join(['%s'] * len(columns[buy_or_rent]))
-    insert_query = f"INSERT INTO {buy_or_rent} ({', '.join(columns[buy_or_rent])}) VALUES ({values_placeholder})"
+    insert_query = f"INSERT INTO {table_name} ({', '.join(columns[buy_or_rent])}) VALUES ({values_placeholder})"
     
-    # Fetch all existing url's from the table:
-    cur.execute(f'SELECT url FROM {buy_or_rent}')
-    existing_urls = [row[0] for row in cur.fetchall()]
-
     for data_dict in data_list:
-        if data_dict['url'] not in existing_urls: ## don't insert the data if the url is already present
-            data_dict['timestamp'] = datetime.datetime.now()
-            data_tuple = tuple(data_dict[col] for col in columns[buy_or_rent]) ## convert dictionary of key:value pairs into tuple of values
-            cur.execute(insert_query, data_tuple)
-        else: 
-            logger.info(f'url already present in database, skipping: {data_dict['url']}')
+        data_dict['timestamp'] = datetime.datetime.now()
+        data_tuple = tuple(data_dict[col] for col in columns[buy_or_rent]) ## convert dictionary of key:value pairs into tuple of values
+        cur.execute(insert_query, data_tuple)
 
     # Commit the changes to the database
     conn.commit()
@@ -81,3 +75,25 @@ def save_to_sql(buy_or_rent, data_list):
     cur.close()
     conn.close()
 
+def get_existing_property_ids(db_name:str, table_name:str) -> list:
+    conn = mysql.connector.connect(
+        host = os.getenv('DB_HOST'),
+        user = os.getenv('DB_USER'),
+        password = os.getenv('DB_PASSWORD'),
+    )
+    cur = conn.cursor() ## The cursor is used to execute commands
+
+    try:
+        conn.database = db_name
+    except mysql.connector.errors.ProgrammingError as err:
+        logging.info(f"Cannot connect to database {db_name} to verify properties. If this is not your first time scraping, please verify .env settings for mysql connection. Returning empty list of pre-existing property id's...")
+        return ['']
+
+    try:
+        cur.execute(f"SELECT property_id FROM {table_name}")
+    except mysql.connector.errors.ProgrammingError:
+        logging.info(f"Table '{table_name}' does not exist yet, returning empty list of pre-existing property id's...")
+        return ['']
+    
+    existing_property_ids = [row[0] for row in cur.fetchall()]
+    return existing_property_ids

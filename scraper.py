@@ -1,14 +1,14 @@
-# This file will contain all of the scrapers for different websites.
+# This file will contain all of the scrapers for different websites.self.property_links
 
 from seleniumbase import SB
-from seleniumbase.common.exceptions import NoSuchElementException
+from seleniumbase.common.exceptions import NoSuchElementException, TimeoutException
 from bs4 import BeautifulSoup
 import random
 random.seed(1)
 import logging
 import re
 
-from DataPipeline import save_to_sql
+from DataPipeline import save_to_sql, get_existing_property_ids
 import settings
 
 logging.basicConfig(level=logging.INFO)
@@ -16,9 +16,10 @@ logger = logging.getLogger(__name__)
 
 class BieniciScraper():
     def __init__(self) -> None:
-        self.tiles = []
+        self.db_name = 'paris_RE'
+        self.property_links = [] 
         self.base_url = "https://www.bienici.com"
-        self.url_ext = {
+        self.url_extensions = { # 
             'rent':"/recherche/location/paris-75000?page=",
             'buy':"/recherche/achat/paris-75000?page="
         }
@@ -48,11 +49,24 @@ class BieniciScraper():
                 raise ConnectionError(f"Error: Unable to find element '{element}'. Please check proxy settings...")
     
     def populate_property_list(self, page, sb) -> None:
-        target_url = self.base_url + self.url_ext[self.buy_or_rent] + str(page)
+        target_url = self.base_url + self.url_extensions[self.buy_or_rent] + str(page)
         sb.get(target_url)
         self.check_driver(target_url, sb, self.tile_selector)
         soup = BeautifulSoup(sb.get_page_source(), 'html.parser')
-        self.tiles.extend([link.get('href') for link in soup.select(self.tile_selector)])
+        self.property_links.extend([link.get('href') for link in soup.select(self.tile_selector)])
+
+    def extract_property_id(self, url):
+        # Extracts the unique id from the url between '/' and 'q='
+        result = re.search(r'/([^/]+?q=)', url)
+        if result:
+            return result[0]
+        else: return None
+
+    def purge_duplicates(self) -> None:
+        # Checks whether property id already exists in 
+        existing_property_ids = get_existing_property_ids(db_name = self.db_name, 
+                                                          table_name=f'bien_ici_{self.buy_or_rent}')
+        self.property_links = [x for x in self.property_links if self.extract_property_id(x) not in existing_property_ids]
 
     def extract_details_rental(self, soup):
         monthly_rent = soup.find('span', class_=self.monthly_rent_selector)
@@ -69,7 +83,12 @@ class BieniciScraper():
     def extract_property_details(self, property_link, sb) -> dict:
         target_url = self.base_url+property_link
         logger.info(f"Starting next url...\n{target_url}\n")
-        sb.get(target_url)
+
+        try:
+            sb.get(target_url, timeout=10000)
+        except TimeoutException:
+            self.check_driver(target_url,sb,'.'+self.price_header_selector)
+
         self.check_driver(target_url, sb, '.'+self.price_header_selector)
         page_source = sb.get_page_source() 
         soup = BeautifulSoup(page_source, 'html.parser')
@@ -87,7 +106,7 @@ class BieniciScraper():
         zip_code = soup.find('span', class_=self.zip_code_selector)
         zip_code = zip_code.get_text(strip=True) if zip_code else ''
         bathrooms = all_details_div.find('div', string=lambda t: ' WC' in t if t else False)
-        bathrooms = bathrooms.get_text(strip=True) if bathrooms else '1' # safe to assume that unless listed, the property has 1 bathroom
+        bathrooms = bathrooms.get_text(strip=True) if bathrooms else '' 
 
         if self.buy_or_rent == 'buy':
             price, price_square_mtr = self.extract_details_buy(soup)
@@ -111,7 +130,7 @@ class BieniciScraper():
     
     def extract_zip_code(self, zip_code) -> str:
         match = re.search(r'\b75\d{3}\b', zip_code)
-        return int(match.group()) if match else None
+        return match.group() if match else None
     
     def clean_price_range(self, price_str) -> float:
         ## To be used when a price range is given for a property.
@@ -138,7 +157,6 @@ class BieniciScraper():
         else:
             price = self.clean_numeric(price)
 
-        # self.tiles.extend([link.get('href') for link in soup.select(self.tile_selector)])
         self.cleaned_data_list.append({
             'price': price,
             'price_square_mtr': price_square_mtr,
@@ -148,8 +166,9 @@ class BieniciScraper():
             'bedrooms': self.clean_numeric(property_details_dict.get('bedrooms','')),
             'bathrooms': self.clean_numeric(property_details_dict.get('bathrooms','')),
             'realtor': property_details_dict.get('realtor',''),
-            'zip_code': int(zip_code) if zip_code is not None else None,
+            'zip_code': zip_code if zip_code else None,
             'url':property_details_dict.get('url'),
+            'property_id':self.extract_property_id(property_details_dict.get('url'))
         })
 
     def print_results(self) -> None:
@@ -160,10 +179,13 @@ class BieniciScraper():
     def process_data(self) -> None:
         # Saves the scraped data in SQL
         logger.info(f"Savings {len(self.cleaned_data_list)} results to database...")
-        save_to_sql(self.buy_or_rent, self.cleaned_data_list)
+        save_to_sql(db_name = self.db_name, 
+                    table_name= f'bien_ici_{self.buy_or_rent}', 
+                    data_list= self.cleaned_data_list, 
+                    buy_or_rent= self.buy_or_rent)
         self.cleaned_data_list = [] 
 
-    def validate_url(self, url_string, page_num) -> bool:
+    def validate_limit(self, url_string, page_num) -> bool:
         ## If there's only 50 pages and you enter page 100 into the url it will go to page 50
         ## this functions checks if you've run out of pages to scrape.
         url_page_num = url_string[-len(str(page_num)):]
@@ -177,22 +199,26 @@ class BieniciScraper():
         with SB(uc=True, headless=settings.headless, demo=False) as sb:
             ## Populate list of property url's
             for x in range(1,settings.property_page_limit + 1):
-                logger.info(f"Scraping property listings from page {x} of BienIci...")
+                logger.info(f"Scraping property to {self.buy_or_rent} listings from page {x} of BienIci...")
                 self.populate_property_list(x, sb)
                 current_url = sb.get_current_url()
-                if not self.validate_url(current_url, x):
+                if not self.validate_limit(current_url, x):
                     break
 
+            ## Remove pre-existing properties from property list before commencing
+            self.purge_duplicates()    
+            
             ## Loop through property urls and extract details of each one
-            for x in range(len(self.tiles)):
-                property_details_dict = self.extract_property_details(self.tiles[x], sb)
+            for x in range(len(self.property_links)):
+                property_details_dict = self.extract_property_details(self.property_links[x], sb)
                 self.clean_data(property_details_dict)
                 self.print_results()
                 ## Save results to database every 5 properties
                 if x % 5 == 0 and x > 0:
                     self.process_data()
 
-        if len(self.cleaned_data_list):
+        if len(self.cleaned_data_list): # if there's any remaining results at the end, insert them into the table
             self.process_data()
-        self.tiles = [] # remove properties that have been logged
+
+        self.property_links = [] # remove properties that have been logged
         logger.info("BienIci scraper finished.")

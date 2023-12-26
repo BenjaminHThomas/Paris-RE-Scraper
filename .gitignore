@@ -12,3 +12,6 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+
+# junk folder
+downloaded_files/
