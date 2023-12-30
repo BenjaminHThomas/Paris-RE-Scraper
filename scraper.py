@@ -85,7 +85,7 @@ class BieniciScraper():
         logger.info(f"Starting next url...\n{target_url}\n")
 
         try:
-            sb.get(target_url, timeout=10000)
+            sb.get(target_url)
         except TimeoutException:
             self.check_driver(target_url,sb,'.'+self.price_header_selector)
 
@@ -105,7 +105,7 @@ class BieniciScraper():
         realtor = realtor.get_text(strip=True) if realtor else ''
         zip_code = soup.find('span', class_=self.zip_code_selector)
         zip_code = zip_code.get_text(strip=True) if zip_code else ''
-        bathrooms = all_details_div.find('div', string=lambda t: ' WC' in t if t else False)
+        bathrooms = all_details_div.find('div', string=lambda t: (' WC' in t or 'salle de bain' in t or 'salle d’eau' in t) if t else False)
         bathrooms = bathrooms.get_text(strip=True) if bathrooms else '' 
 
         if self.buy_or_rent == 'buy':
