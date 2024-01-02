@@ -10,9 +10,6 @@ headless = True
 ## Number of times the script tries to get a new driver when there's issues getting the desired page/element
 max_retry = 5
 
-## Insert your proxy settings here, to be implemented later when needed
-proxy = {}
-
 ## Change to true to print results for each page in terminal
 print_results = False
 
