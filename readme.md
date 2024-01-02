@@ -3,11 +3,31 @@
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ## Overview
-The Paris RealEstate Scraper is a python-based web scraping tool designed to extract real estate data from French real estate websites and store them in a MySQL database for later use.
+The paris-RE-Scraper is a Python-based web scraper designed to extract Paris real estate information from various websites and store it in a MySQL database. At this stage in development it's only set up to extract information from bienici.com. 
 
-As I'm new to web scraping I'll be starting with the website *bienici* and branching to other websites later on. 
+## Pre-requisites:
+- You need to have MySQL installed prior to running the code. You can find the guide [here.](https://dev.mysql.com/doc/mysql-installation-excerpt/5.7/en/)
 
-Maybe somewhere down the track I'll build a website so anyone can interact with the data.
+## Getting Started
+
+1. Clone the repository:
+```bash
+git clone https://github.com/BenjaminHThomas/Paris-RE-Scraper.git
+```
+
+2. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+4. Add your .env file with your MySQL credentials. Example:
+```
+DB_HOST=localhost
+DB_USER=username
+DB_PASSWORD=password
+```
+
+3. Adjust the settings in settings.py
+
 
 ## License
 
