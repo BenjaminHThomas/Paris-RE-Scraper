@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 def save_to_sql(db_name:str, table_name:str, data_list:list, buy_or_rent:str) -> None:
+    logger.info(f"Savings {len(data_list)} results to database...")
     conn = mysql.connector.connect(
         host = os.getenv('DB_HOST'),
         user = os.getenv('DB_USER'),
@@ -46,6 +47,7 @@ def save_to_sql(db_name:str, table_name:str, data_list:list, buy_or_rent:str) ->
                 rooms DECIMAL,
                 bedrooms DECIMAL,
                 bathrooms DECIMAL,
+                floor INT UNSIGNED,
                 realtor VARCHAR(255),
                 zip_code VARCHAR(255),
                 url VARCHAR(255),
@@ -56,22 +58,30 @@ def save_to_sql(db_name:str, table_name:str, data_list:list, buy_or_rent:str) ->
     """)
 
     columns = {
-        'buy': ['price', 'price_square_mtr', 'size', 'rooms', 'bedrooms', 'bathrooms', 'realtor', 'zip_code', 'url', 'property_id', 'timestamp'],
-        'rent':['monthly_rent', 'size', 'rooms', 'bedrooms', 'bathrooms', 'realtor', 'zip_code', 'url', 'property_id', 'timestamp']
+        'buy': ['price', 'price_square_mtr', 'size', 'rooms', 'bedrooms', 'bathrooms', 'floor', 'realtor', 'zip_code', 'url', 'property_id', 'timestamp'],
+        'rent':['monthly_rent', 'size', 'rooms', 'bedrooms', 'bathrooms', 'floor', 'realtor', 'zip_code', 'url', 'property_id', 'timestamp']
     }
 
     values_placeholder = ', '.join(['%s'] * len(columns[buy_or_rent]))
     insert_query = f"INSERT INTO {table_name} ({', '.join(columns[buy_or_rent])}) VALUES ({values_placeholder})"
+    dup_count = 0 # Count of duplicate property_id's
     
     for data_dict in data_list:
         data_dict['timestamp'] = datetime.datetime.now()
-        data_tuple = tuple(data_dict[col] for col in columns[buy_or_rent]) ## convert dictionary of key:value pairs into tuple of values
-        cur.execute(insert_query, data_tuple)
 
-    # Commit the changes to the database
+        # check if property_id already exists in the table
+        cur.execute(f"SELECT EXISTS(SELECT * FROM {table_name} WHERE property_id = %s)", (data_dict['property_id'],))
+        exists = cur.fetchone()[0]
+
+        if not exists: # only insert if property_id isn't already in table
+            data_tuple = tuple(data_dict[col] for col in columns[buy_or_rent]) ## convert dictionary of key:value pairs into tuple of values
+            cur.execute(insert_query, data_tuple)
+        else:
+            dup_count += 1
+    
+    logger.info(f"{dup_count} duplicates removed prior to insertion...") # I remove duplicates twice due to a bug which I need to identify and fix. Log is to help highlight where it's happening.
+
     conn.commit()
-
-    # Close the cursor and connection
     cur.close()
     conn.close()
 

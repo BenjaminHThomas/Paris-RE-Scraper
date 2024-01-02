@@ -63,17 +63,20 @@ class BieniciScraper():
         else: return None
 
     def purge_duplicates(self) -> None:
-        # Checks whether property id already exists in 
+        # Checks whether property id already exists in SQL & removes from to-scrape list (property_links)
         existing_property_ids = get_existing_property_ids(db_name = self.db_name, 
                                                           table_name=f'bien_ici_{self.buy_or_rent}')
+        initial_len = len(self.property_links)
         self.property_links = [x for x in self.property_links if self.extract_property_id(x) not in existing_property_ids]
+        new_len = len(self.property_links)
+        logger.info(f"{initial_len-new_len} duplicates removed, proceeding...")
 
-    def extract_details_rental(self, soup):
+    def extract_details_rental(self, soup) -> str:
         monthly_rent = soup.find('span', class_=self.monthly_rent_selector)
         monthly_rent = monthly_rent.get_text(strip=True) if monthly_rent else ''
         return monthly_rent
 
-    def extract_details_buy(self, soup):
+    def extract_details_buy(self, soup) -> str:
         price = soup.find(class_=self.price_header_selector)
         price = price.get_text(strip = True) if price else ''
         price_square_mtr = soup.find(class_=self.price_square_mtr_selector)
@@ -105,8 +108,10 @@ class BieniciScraper():
         realtor = realtor.get_text(strip=True) if realtor else ''
         zip_code = soup.find('span', class_=self.zip_code_selector)
         zip_code = zip_code.get_text(strip=True) if zip_code else ''
-        bathrooms = all_details_div.find('div', string=lambda t: (' WC' in t or 'salle de bain' in t or 'salle d’eau' in t) if t else False)
+        bathrooms = all_details_div.find('div', string=lambda t: (' WC' in t or 'salle de bain' in t or "salle d'eau" in t) if t else False)
         bathrooms = bathrooms.get_text(strip=True) if bathrooms else '' 
+        floor = all_details_div.find('div', string=lambda t: 'étage' in t if t else False)
+        floor = floor.get_text(strip=True) if floor else ''
 
         if self.buy_or_rent == 'buy':
             price, price_square_mtr = self.extract_details_buy(soup)
@@ -123,9 +128,10 @@ class BieniciScraper():
             'rooms': rooms,
             'bedrooms': bedrooms,
             'bathrooms': bathrooms,
+            'floor': floor,
             'realtor': realtor,
             'zip_code': zip_code,
-            'url': target_url,
+            'url': target_url
         }
     
     def extract_zip_code(self, zip_code) -> str:
@@ -144,6 +150,15 @@ class BieniciScraper():
     def clean_numeric(self, value) -> float:
         value = value.replace("\xa0", "")
         return float(re.sub(r"[^\d.]", "", value)) if value else None
+    
+    def extract_floor_number(self, floor_string) -> int:
+        # Extracts first number that has an "e" attached to it from string. e.g., "3e étage (sur 6)" would extract 3.
+        pattern = r'\b(\d+)e\b'
+        match = re.search(pattern, floor_string)
+        if match:
+            return int(match.group(1))
+        else:
+            return None
 
     def clean_data(self, property_details_dict) -> None:
         price_square_mtr = self.clean_numeric(property_details_dict.get('price_square_mtr','').replace(",", "."))
@@ -165,8 +180,9 @@ class BieniciScraper():
             'rooms': self.clean_numeric(property_details_dict.get('rooms','')),
             'bedrooms': self.clean_numeric(property_details_dict.get('bedrooms','')),
             'bathrooms': self.clean_numeric(property_details_dict.get('bathrooms','')),
+            'floor': self.extract_floor_number(property_details_dict.get('floor',None)),
             'realtor': property_details_dict.get('realtor',''),
-            'zip_code': zip_code if zip_code else None,
+            'zip_code': str(zip_code) if zip_code else None,
             'url':property_details_dict.get('url'),
             'property_id':self.extract_property_id(property_details_dict.get('url'))
         })
@@ -178,7 +194,6 @@ class BieniciScraper():
 
     def process_data(self) -> None:
         # Saves the scraped data in SQL
-        logger.info(f"Savings {len(self.cleaned_data_list)} results to database...")
         save_to_sql(db_name = self.db_name, 
                     table_name= f'bien_ici_{self.buy_or_rent}', 
                     data_list= self.cleaned_data_list, 
@@ -196,7 +211,7 @@ class BieniciScraper():
             raise ValueError("Invalid input. Please provide either 'rent' or 'buy' to the scrape function")
         self.buy_or_rent = buy_or_rent # might reconsider this line, defining instance variables outside init isn't best practice
 
-        with SB(uc=True, headless=settings.headless, demo=False) as sb:
+        with SB(uc=True, headless=settings.headless, demo=settings.demo_mode) as sb:
             ## Populate list of property url's
             for x in range(1,settings.property_page_limit + 1):
                 logger.info(f"Scraping property to {self.buy_or_rent} listings from page {x} of BienIci...")
@@ -205,14 +220,16 @@ class BieniciScraper():
                 if not self.validate_limit(current_url, x):
                     break
 
-            ## Remove pre-existing properties from property list before commencing
+            ## Remove pre-existing properties from property list before commencing scraping
             self.purge_duplicates()    
             
             ## Loop through property urls and extract details of each one
+            logger.info(f"Commencing the scraping of {buy_or_rent} properties...")
             for x in range(len(self.property_links)):
                 property_details_dict = self.extract_property_details(self.property_links[x], sb)
                 self.clean_data(property_details_dict)
-                self.print_results()
+                if settings.print_results:
+                    self.print_results()
                 ## Save results to database every 5 properties
                 if x % 5 == 0 and x > 0:
                     self.process_data()

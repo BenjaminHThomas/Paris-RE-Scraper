@@ -1,9 +1,4 @@
 import scraper
-import logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-from DataPipeline import save_to_sql, get_existing_property_ids
 
 """
 Currently there's only one scraper, which is for BienIci.com.
@@ -34,8 +29,6 @@ You can validate this by inspecting the webpage and searching for the missing el
 
 if __name__ == '__main__':
     myinstance = scraper.BieniciScraper()
-    # logger.info("Commencing the scraping of properties for sale...")
-    # myinstance.scrape('buy')
-    # logger.info("Commencing the scraping of the properties for rent...")
-    # myinstance.scrape('rent')
+    myinstance.scrape('buy')
+    myinstance.scrape('rent')
 
