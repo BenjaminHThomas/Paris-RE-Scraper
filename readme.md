@@ -93,6 +93,15 @@ rent = psql.read_sql(query2, con=db)
 # close the database connection
 db.close()
 ```
+### It should look something like this:
+| id | price | price_square_mtr | size | rooms | bedrooms | bathrooms | floor | realtor | zip_code | url | property_id | timestamp |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 319000 | 11200 | 27 | 2 | 1 | 1 | None | LAFORET SAINT AMBROISE - Lafor�t PARIS 11 ST AMBROISE | 75011 | https://www.bienici.com/annonce/vente/paris-11e/appartement/2pieces/laforet-immo-facile-21946723?q=%2Frecherche%2Fachat%2Fparis-75000%3Fpage%3D1&depuis-mise-en-avant=oui | /laforet-immo-facile-21946723?q= | 2023-12-30 15:00:17 |
+| 2 | 542000 | 9537 | 54 | 2 | 1 | None | None |  | 75020 | https://www.bienici.com/annonce/vente/paris-20e/appartement/2pieces/gedeon-27853220?q=%2Frecherche%2Fachat%2Fparis-75000%3Fpage%3D1&depuis-mise-en-avant=oui | /gedeon-27853220?q= | 2023-12-30 15:00:17 |
+| 3 | 325600 | 13900 | 23 | 1 | None | None | 4 | Abriculteurs - St�phanie ANRIOT | 75007 | https://www.bienici.com/annonce/vente/paris-7e/appartement/1piece/apimo-83836625?q=%2Frecherche%2Fachat%2Fparis-75000%3Fpage%3D1 | /apimo-83836625?q= | 2023-12-30 15:00:17 |
+| 4 | 392000 | 8621 | 44 | 2 | 1 | None | 4 | Abriculteurs - St�phanie ANRIOT | 75019 | https://www.bienici.com/annonce/vente/paris-19e/appartement/2pieces/apimo-83800054?q=%2Frecherche%2Fachat%2Fparis-75000%3Fpage%3D1 | /apimo-83800054?q= | 2023-12-30 15:00:17 |
+| 5 | 1100000 | 10000 | 105 | 6 | 4 | 2 | None | DE FERLA IMMOBILIER | 75014 | https://www.bienici.com/annonce/vente/paris-14e/appartement/6pieces/ag750523-407039141?q=%2Frecherche%2Fachat%2Fparis-75000%3Fpage%3D1 | /ag750523-407039141?q= | 2023-12-30 15:00:17 |
+
 
 ## License
 
