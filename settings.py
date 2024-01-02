@@ -10,7 +10,7 @@ headless = True
 ## Number of times the script tries to get a new driver when there's issues getting the desired page/element
 max_retry = 5
 
-## Change to true to print results for each page in terminal
+## Change to true to print details for each property
 print_results = False
 
 ## Demo mode slows the script down for you to inspect. Ensure headless = False if using demo_mode.
