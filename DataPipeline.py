@@ -2,6 +2,8 @@
 import mysql.connector
 from dotenv import load_dotenv
 import os
+import pandas as pd
+from sqlalchemy import create_engine
 import logging
 import datetime
 
@@ -11,14 +13,17 @@ logger = logging.getLogger(__name__)
 # Load environment variables from the .env file
 load_dotenv()
 
-def save_to_sql(db_name:str, table_name:str, data_list:list, buy_or_rent:str) -> None:
-    logger.info(f"Savings {len(data_list)} results to database...")
-    conn = mysql.connector.connect(
-        host = os.getenv('DB_HOST'),
-        user = os.getenv('DB_USER'),
-        password = os.getenv('DB_PASSWORD'),
-    )
+host = os.getenv('DB_HOST')
+user = os.getenv('DB_USER')
+password = os.getenv('DB_PASSWORD')
 
+def connect_to_db(db_name:str):
+    logger.info(f'Connecting to database...')
+    conn = mysql.connector.connect(
+        host = host,
+        user = user,
+        password = password,
+    )
     cur = conn.cursor() ## The cursor is used to execute commands
 
     try:
@@ -28,6 +33,9 @@ def save_to_sql(db_name:str, table_name:str, data_list:list, buy_or_rent:str) ->
 
     conn.database = db_name
 
+    return cur, conn
+
+def save_to_sql(table_name:str, data_list:list, buy_or_rent:str, cur, conn) -> None:
     queries = {
         'buy':"""
         price DECIMAL,
@@ -53,13 +61,15 @@ def save_to_sql(db_name:str, table_name:str, data_list:list, buy_or_rent:str) ->
                 url VARCHAR(255),
                 property_id VARCHAR(255),
                 timestamp TIMESTAMP,
+                removed BOOLEAN,
+                updated TIMESTAMP,
                 PRIMARY KEY (id)
     )
     """)
 
     columns = {
-        'buy': ['price', 'price_square_mtr', 'size', 'rooms', 'bedrooms', 'bathrooms', 'floor', 'realtor', 'zip_code', 'url', 'property_id', 'timestamp'],
-        'rent':['monthly_rent', 'size', 'rooms', 'bedrooms', 'bathrooms', 'floor', 'realtor', 'zip_code', 'url', 'property_id', 'timestamp']
+        'buy': ['price', 'price_square_mtr', 'size', 'rooms', 'bedrooms', 'bathrooms', 'floor', 'realtor', 'zip_code', 'url', 'property_id', 'timestamp','removed','updated'],
+        'rent':['monthly_rent', 'size', 'rooms', 'bedrooms', 'bathrooms', 'floor', 'realtor', 'zip_code', 'url', 'property_id', 'timestamp','removed','updated']
     }
 
     values_placeholder = ', '.join(['%s'] * len(columns[buy_or_rent]))
@@ -79,31 +89,50 @@ def save_to_sql(db_name:str, table_name:str, data_list:list, buy_or_rent:str) ->
         else:
             dup_count += 1
     
-    logger.info(f"{dup_count} duplicates removed prior to insertion...") # I remove duplicates twice due to a bug which I need to identify and fix. Log is to help highlight where it's happening.
-
+    logger.info(f"{dup_count} duplicates removed prior to insertion...") # I need to remove duplicates twice as sometimes the URL changes and they slip through the first check.
     conn.commit()
-    cur.close()
-    conn.close()
 
-def get_existing_property_ids(db_name:str, table_name:str) -> list:
-    conn = mysql.connector.connect(
-        host = os.getenv('DB_HOST'),
-        user = os.getenv('DB_USER'),
-        password = os.getenv('DB_PASSWORD'),
-    )
-    cur = conn.cursor() ## The cursor is used to execute commands
-
-    try:
-        conn.database = db_name
-    except mysql.connector.errors.ProgrammingError as err:
-        logging.info(f"Cannot connect to database {db_name} to verify properties. If this is not your first time scraping, please verify .env settings for mysql connection. Returning empty list of pre-existing property id's...")
-        return ['']
-
+def get_existing_property_ids(table_name:str, cur, conn) -> list:
     try:
         cur.execute(f"SELECT property_id FROM {table_name}")
     except mysql.connector.errors.ProgrammingError:
-        logging.info(f"Table '{table_name}' does not exist yet, returning empty list of pre-existing property id's...")
+        logger.info(f"Table '{table_name}' does not exist yet, returning empty list of pre-existing property id's...")
         return ['']
     
     existing_property_ids = [row[0] for row in cur.fetchall()]
     return existing_property_ids
+
+def retrieve_table(db_name:str, table_name:str, cur, conn) -> pd.DataFrame:
+    logger.info(f'Retrieving table "{table_name}" from {db_name}...')
+    engine = create_engine(f"mysql+mysqlconnector://{user}:{password}@{host}/{db_name}")
+    query = f'SELECT * FROM {table_name}'
+    df = pd.read_sql(query, engine)
+    return df
+
+def update_record(table_name, id, property_dict, buy_or_rent, cur, conn) -> None:
+    columns = {
+        'buy': ['price', 'price_square_mtr', 'size', 'rooms', 'bedrooms', 'bathrooms', 'floor', 'realtor', 'zip_code', 'url','removed'],
+        'rent':['monthly_rent', 'size', 'rooms', 'bedrooms', 'bathrooms', 'floor', 'realtor', 'zip_code', 'url','removed']
+    }
+    # Generate the SET part of the UPDATE query using dictionary keys and placeholders
+    set_clause = ', '.join([f"{column} = %({column})s" for column in columns.get(buy_or_rent)])
+    # Update the specific row
+    update_query = f"UPDATE {table_name} SET {set_clause} WHERE id = %(id)s"
+    property_dict['id'] = id # add in id to the property details
+    cur.execute(update_query, property_dict)
+    conn.commit() # Commit the changes
+    logger.info(f'Property {id} in {table_name} updated successfully...')
+
+def flag_delisted(table_name, id, cur, conn) -> None:
+    # Flags a property as delisted.
+    update_query = f'UPDATE {table_name} SET removed = TRUE WHERE id = {id}'
+    cur.execute(update_query)
+    conn.commit()
+    logger.info(f'Row with ID {id} in {table_name} flagged as delisted successfully...')
+
+def timestamp_update(table_name, id, cur, conn) -> None:
+    # records the time when the record was last checked for updates.
+    update_query = f'UPDATE {table_name} SET updated = %s where id = %s'
+    cur.execute(update_query, (datetime.datetime.now(), id))
+    conn.commit()
+    logger.info('Record update timestamped...\n')

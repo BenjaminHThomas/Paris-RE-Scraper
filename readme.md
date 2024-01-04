@@ -59,6 +59,15 @@ if __name__ == '__main__':
 python main.py
 ```
 
+6. Update your tables:
+
+To keep your records up-to-date, run the update_table function with either 'buy' or 'rent' to check if any details have changed or the property has been delisted.
+```python 
+myinstance = scraper.BieniciScraper()
+myinstance.update_table('buy')
+myinstance.update_table('rent')
+```
+
 ## Usage
 Once the scraper is finished you can access the data in MySQL.
 <br/>

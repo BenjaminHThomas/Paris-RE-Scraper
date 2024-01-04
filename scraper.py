@@ -8,7 +8,7 @@ random.seed(1)
 import logging
 import re
 
-from DataPipeline import save_to_sql, get_existing_property_ids
+from DataPipeline import save_to_sql, get_existing_property_ids, update_record, retrieve_table, flag_delisted, timestamp_update, connect_to_db
 import settings
 
 logging.basicConfig(level=logging.INFO)
@@ -28,10 +28,20 @@ class BieniciScraper():
         self.price_square_mtr_selector = "ad-price__price-per-square-meter"
         self.monthly_rent_selector = 'ad-price__the-price'
         self.details_table_selector = 'allDetails'
+        self.section_title_selector = 'section-title'
         self.realtor_selector = 'agency-overview__info-name'
         self.zip_code_selector = 'fullAddress'
         self.cleaned_data_list = []
-    
+        self.conn = '' # Will be updated once connection is established
+        self.cur = '' # Will be updated once connection is established
+        self.buy_or_rent = '' # Will be updated when scrape or update is called
+
+    def choose_table(self, buy_or_rent):
+        # sets instance variable to either 'buy' or 'rent' which later determines the sql table name
+        if buy_or_rent not in ('rent', 'buy'):
+            raise ValueError("Invalid input. Please provide either 'rent' or 'buy' to the scrape function")
+        self.buy_or_rent = buy_or_rent 
+
     def check_driver(self, url, sb, element) -> None:
         ## If the element is not present, resets the chrome driver.
         try:
@@ -40,7 +50,7 @@ class BieniciScraper():
             for _ in range(settings.max_retry+1):
                 if sb.is_element_present(element):
                     break
-                logging.warning("Retrying with new driver...")
+                logger.warning("Retrying with new driver...")
                 #sb.close() ## deprecated, need to find way to close previous browser
                 sb.get_new_driver(undetectable = True)
                 sb.get(url)
@@ -64,8 +74,9 @@ class BieniciScraper():
 
     def purge_duplicates(self) -> None:
         # Checks whether property id already exists in SQL & removes from to-scrape list (property_links)
-        existing_property_ids = get_existing_property_ids(db_name = self.db_name, 
-                                                          table_name=f'bien_ici_{self.buy_or_rent}')
+        existing_property_ids = get_existing_property_ids(table_name=f'bien_ici_{self.buy_or_rent}',
+                                                          cur = self.cur,
+                                                          conn =self.conn)
         initial_len = len(self.property_links)
         self.property_links = [x for x in self.property_links if self.extract_property_id(x) not in existing_property_ids]
         new_len = len(self.property_links)
@@ -83,9 +94,10 @@ class BieniciScraper():
         price_square_mtr = price_square_mtr.get_text(strip = True) if price_square_mtr else ''
         return price, price_square_mtr
 
-    def extract_property_details(self, property_link, sb) -> dict:
-        target_url = self.base_url+property_link
-        logger.info(f"Starting next url...\n{target_url}\n")
+    def extract_property_details(self, property_link, sb, target_url=False) -> dict:
+        if not target_url: # If no target url is supplied, it will be taken from the property_link
+            target_url = self.base_url+property_link
+        logger.info(f"Starting next url...\n{target_url}")
 
         try:
             sb.get(target_url)
@@ -112,6 +124,8 @@ class BieniciScraper():
         bathrooms = bathrooms.get_text(strip=True) if bathrooms else '' 
         floor = all_details_div.find('div', string=lambda t: 'étage' in t if t else False)
         floor = floor.get_text(strip=True) if floor else ''
+        removed = soup.find('div', class_=self.section_title_selector)
+        removed = removed.get_text(strip=True).replace('’', '') == 'Cette annonce nest plus disponible.' if removed else False # this header explains that the listing is no longer available.
 
         if self.buy_or_rent == 'buy':
             price, price_square_mtr = self.extract_details_buy(soup)
@@ -129,6 +143,7 @@ class BieniciScraper():
             'bedrooms': bedrooms,
             'bathrooms': bathrooms,
             'floor': floor,
+            'removed': removed,
             'realtor': realtor,
             'zip_code': zip_code,
             'url': target_url
@@ -160,7 +175,7 @@ class BieniciScraper():
         else:
             return None
 
-    def clean_data(self, property_details_dict) -> None:
+    def clean_data(self, property_details_dict, update = False) -> dict:
         price_square_mtr = self.clean_numeric(property_details_dict.get('price_square_mtr','').replace(",", "."))
         if "k" in property_details_dict['price_square_mtr']:
             price_square_mtr *= 1000
@@ -172,20 +187,26 @@ class BieniciScraper():
         else:
             price = self.clean_numeric(price)
 
-        self.cleaned_data_list.append({
-            'price': price,
-            'price_square_mtr': price_square_mtr,
-            'monthly_rent': self.clean_numeric(property_details_dict.get('monthly_rent','')),
-            'size': self.clean_numeric(property_details_dict.get('size','')),
-            'rooms': self.clean_numeric(property_details_dict.get('rooms','')),
-            'bedrooms': self.clean_numeric(property_details_dict.get('bedrooms','')),
-            'bathrooms': self.clean_numeric(property_details_dict.get('bathrooms','')),
-            'floor': self.extract_floor_number(property_details_dict.get('floor',None)),
-            'realtor': property_details_dict.get('realtor',''),
-            'zip_code': str(zip_code) if zip_code else None,
-            'url':property_details_dict.get('url'),
-            'property_id':self.extract_property_id(property_details_dict.get('url'))
-        })
+        cleaned_data = {
+                'price': price,
+                'price_square_mtr': price_square_mtr,
+                'monthly_rent': self.clean_numeric(property_details_dict.get('monthly_rent','')),
+                'size': self.clean_numeric(property_details_dict.get('size','')),
+                'rooms': self.clean_numeric(property_details_dict.get('rooms','')),
+                'bedrooms': self.clean_numeric(property_details_dict.get('bedrooms','')),
+                'bathrooms': self.clean_numeric(property_details_dict.get('bathrooms','')),
+                'floor': self.extract_floor_number(property_details_dict.get('floor',None)),
+                'removed': property_details_dict.get('removed', False),
+                'realtor': property_details_dict.get('realtor',''),
+                'zip_code': str(zip_code) if zip_code else None,
+                'url':property_details_dict.get('url'),
+                'property_id':self.extract_property_id(property_details_dict.get('url'))
+            }
+        
+        if not update:
+            self.cleaned_data_list.append(cleaned_data)
+        else:
+            return cleaned_data
 
     def print_results(self) -> None:
         logger.info("Formatted scraping results:")
@@ -194,10 +215,11 @@ class BieniciScraper():
 
     def process_data(self) -> None:
         # Saves the scraped data in SQL
-        save_to_sql(db_name = self.db_name, 
-                    table_name= f'bien_ici_{self.buy_or_rent}', 
+        save_to_sql(table_name= f'bien_ici_{self.buy_or_rent}', 
                     data_list= self.cleaned_data_list, 
-                    buy_or_rent= self.buy_or_rent)
+                    buy_or_rent= self.buy_or_rent, 
+                    cur = self.cur, 
+                    conn = self.conn)
         self.cleaned_data_list = [] 
 
     def validate_limit(self, url_string, page_num) -> bool:
@@ -207,11 +229,10 @@ class BieniciScraper():
         return url_page_num == str(page_num)
 
     def scrape(self, buy_or_rent) -> None:
-        if buy_or_rent not in ('rent', 'buy'):
-            raise ValueError("Invalid input. Please provide either 'rent' or 'buy' to the scrape function")
-        self.buy_or_rent = buy_or_rent # might reconsider this line, defining instance variables outside init isn't best practice
+        self.choose_table(buy_or_rent)
 
         with SB(uc=True, headless=settings.headless, demo=settings.demo_mode) as sb:
+            self.cur, self.conn = connect_to_db(self.db_name)
             ## Populate list of property url's
             for x in range(1,settings.property_page_limit + 1):
                 logger.info(f"Scraping property to {self.buy_or_rent} listings from page {x} of BienIci...")
@@ -234,8 +255,53 @@ class BieniciScraper():
                 if x % 5 == 0 and x > 0:
                     self.process_data()
 
-        if len(self.cleaned_data_list): # if there's any remaining results at the end, insert them into the table
+        if self.cleaned_data_list: # if there's any remaining results at the end, insert them into the table
             self.process_data()
 
         self.property_links = [] # remove properties that have been logged
         logger.info("BienIci scraper finished.")
+        self.cur.close()
+        self.conn.close()
+
+    def update_row(self, row, property_dict) -> None:
+        ## If a value has changed, update the record in MySQL
+        if property_dict.get('removed') == True:
+            # Don't update all values because they may now be null & I want to preserve the data.
+            logger.info(f'removed property found:\n{row["url"]}')
+            flag_delisted(f'bien_ici_{self.buy_or_rent}', row["id"],
+                          cur = self.cur, conn = self.conn)
+            return
+
+        column_dict = {
+            'buy':['price','price_square_mtr'],
+            'rent':['monthly_rent']
+        }
+        cols_to_check = column_dict.get(self.buy_or_rent)
+        cols_to_check += ['size','rooms','bedrooms','bathrooms','floor','removed']
+        for col in cols_to_check:
+            if property_dict.get(col) != row[col] and property_dict.get(col) is not None: # If a value has changed, update the row.
+                logger.info(f'New value found:\n url:{row["url"]} \nold {col}: {row[col]}\nnew {col}: {property_dict.get(col)}')
+                update_record(f'bien_ici_{self.buy_or_rent}', row["id"], property_dict, self.buy_or_rent,
+                              cur = self.cur, conn = self.conn)
+
+    def update_table(self, buy_or_rent) -> None:
+        # Goes through existing records to see if they've been updated or delisted.
+        self.choose_table(buy_or_rent) # assign instance variable.
+
+        with SB(uc=True, headless=settings.headless, demo=settings.demo_mode) as sb:
+            self.cur, self.conn = connect_to_db(self.db_name)
+            df = retrieve_table(db_name=self.db_name,
+                                table_name=f'bien_ici_{self.buy_or_rent}',
+                                cur = self.cur, conn = self.conn)
+            df = df[df['removed'] == 0].sort_values(by=['updated','timestamp'], ascending=True)
+
+            for _, row in df.iterrows():
+                property_dict = self.extract_property_details(property_link=None,
+                                                                    sb = sb,
+                                                                    target_url=row['url']
+                                                                )
+                cleaned_property_dict = self.clean_data(property_dict, update=True)
+                self.update_row(row, cleaned_property_dict)
+                timestamp_update(f'bien_ici_{buy_or_rent}', row["id"], self.cur, self.conn)
+        self.cur.close()
+        self.conn.close()
