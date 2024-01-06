@@ -15,29 +15,36 @@ logger = logging.getLogger(__name__)
 class _baseScraper():
     def __init__(self, buy_or_rent:str) -> None:
         self.buy_or_rent = self._choose_table(buy_or_rent)
-        self.property_links = []
-        self.cleaned_data_list = []
-        self.property_features = []
-        self.db_name = ''
-        self.table_name = ''
-        self.conn = '' 
-        self.cur = ''
+        self.property_links = [] # list of properties to scrape
+        self.cleaned_data_list = [] # list of dictionaries containing cleaned property details
+        self.property_features = [] # list of features being scraped: e.g., rooms, bedrooms, size etc.
+        self.db_name = '' # database name
+        self.table_name = '' # sql table name
+        self.conn = '' # sql connection
+        self.cur = '' # sql cursor
     
     def _choose_table(self, buy_or_rent:str) -> str:
         # sets instance variable to either 'buy' or 'rent' which later determines the sql table name
         if buy_or_rent not in ('rent', 'buy'):
-            raise ValueError("Invalid input. Please provide either 'rent' or 'buy' to the scrape function")
+            raise ValueError("Invalid input. Please provide either 'rent' or 'buy'")
         return buy_or_rent 
 
-    def _check_driver(self, url:str, sb:Callable, element:str) -> None:
+    def _check_driver(self, url:str, sb:Callable, element:str, uid_func:Callable) -> bool:
         """
         url: a url string
         sb: the web browser SB from seleniumbase
         element: a string representing an HTML element (class or id)
+        uid_func: function that extracts unique id from url
         """
         try:
             sb.wait_for_element_present(element, timeout=10)
         except NoSuchElementException:
+            # Check whether url still exists or if it's a dead link. Checks whether unique id is still present to determine this.
+            actual_url = sb.get_current_url()
+            if uid_func(url) and uid_func(url) not in actual_url:
+                logger.info(f'URL is no longer valid, skipping...')
+                return False
+
             for _ in range(settings.max_retry+1):
                 if sb.is_element_present(element):
                     break
@@ -48,6 +55,7 @@ class _baseScraper():
                 sb.sleep(3 + random.random())
             if not sb.is_element_present(element):
                 raise ConnectionError(f"Error: Unable to find element '{element}'. Please check proxy settings...")
+        return True
     
     def _extract_zip_code(self, zip_code_str:str):
         match = re.search(r'\b75\d{3}\b', zip_code_str)
@@ -77,7 +85,7 @@ class _baseScraper():
         ## If a value has changed, update the record in MySQL
         if cleaned_data.get('removed') == True:
             # Don't update all values because they may now be null & I want to preserve the data.
-            logger.info(f'removed property found:\n{row["url"]}')
+            logger.info(f'removed property found...')
             flag_delisted(self.table_name, row["id"],
                           cur = self.cur, conn = self.conn)
             return
@@ -100,10 +108,13 @@ class _baseScraper():
             df = df[df['removed'] == 0].sort_values(by=['updated','timestamp'], ascending=True)
 
             for _, row in df.iterrows():
-                property_dict = exctract_func(None, sb, target_url=row['url'])
-                cleaned_data = clean_func(property_dict, update=True)
-                self._update_row(row, cleaned_data)
-                timestamp_update(table_name = self.table_name,
+                property_dict = exctract_func(property_link = None, sb = sb, target_url=row['url'])
+                if not property_dict: # If a URL is no longer valid and there's no delisted message, mark the property as delisted.
+                    flag_delisted(self.table_name, row['id'], self.cur, self.conn)
+                else:
+                    cleaned_data = clean_func(property_dict, update=True)
+                    self._update_row(row, cleaned_data)
+                    timestamp_update(table_name = self.table_name,
                                  id = row['id'],
                                  cur = self.cur, conn = self.conn)
                 

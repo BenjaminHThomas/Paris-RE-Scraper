@@ -17,9 +17,9 @@ You can validate this by inspecting the webpage and searching for the missing el
 
 if __name__ == '__main__':
     rent_scraper = BienIciScraper.BienIciRent()
-    #rent_scraper.scrape()
+    rent_scraper.scrape()
     #rent_scraper.update_table()
 
     buy_scraper = BienIciScraper.BienIciBuy()
-    #buy_scraper.scrape()
+    buy_scraper.scrape()
     #buy_scraper.update_table()

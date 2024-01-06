@@ -27,12 +27,13 @@ class _BaseBienIci(BaseScraper._baseScraper):
         self.zip_code_selector = 'fullAddress'
 
     def _check_driver(self, url: str, sb: Callable, element: str) -> None:
-        return super()._check_driver(url, sb, element)
+        return super()._check_driver(url, sb, element, uid_func=self._extract_property_id)
 
     def _populate_property_list(self, page:int, sb:Callable) -> None:
         target_url = self.base_url + self.url_extension + str(page)
         sb.get(target_url)
-        self._check_driver(target_url, sb, self.tile_selector)
+        if not self._check_driver(target_url, sb, self.tile_selector):
+            return
         soup = BeautifulSoup(sb.get_page_source(), 'html.parser')
         self.property_links.extend([link.get('href') for link in soup.select(self.tile_selector)])
 
@@ -41,7 +42,7 @@ class _BaseBienIci(BaseScraper._baseScraper):
         result = re.search(r'/([^/]+?q=)', url)
         if result:
             return result[0]
-        else: return None
+        else: return ''
 
     def _purge_duplicates(self, table_name:str) -> None:
         # Checks whether property id already exists in SQL & removes from to-scrape list (property_links)
@@ -69,14 +70,16 @@ class _BaseBienIci(BaseScraper._baseScraper):
     def _extract_property_details(self, property_link:str, sb:Callable, target_url=False) -> dict:
         if not target_url:
             target_url = self.base_url+property_link
-        logger.info(f"Starting next url...\n{target_url}")
+        logger.info(f"\n\nStarting next url...\n{target_url}")
 
         try:
             sb.get(target_url)
         except TimeoutException:
-            self._check_driver(target_url,sb,'.'+self.details_table_selector)
+            logger.info('Target url timed out, trying again...')
 
-        self._check_driver(target_url, sb, '.'+self.details_table_selector)
+        if not self._check_driver(target_url, sb, '.'+self.details_table_selector):
+            return None, None
+        
         page_source = sb.get_page_source() 
         soup = BeautifulSoup(page_source, 'html.parser')
 
@@ -143,6 +146,7 @@ class _BaseBienIci(BaseScraper._baseScraper):
                 logger.info(f"Scraping {self.buy_or_rent} property listings from page {x} of BienIci...")
                 self._populate_property_list(x, sb)
                 current_url = sb.get_current_url()
+                # Checks whether the current page number is below what is should be, indicating that we've run out of pages to scrape.
                 if not super()._validate_limit(current_url, x):
                     break
             
@@ -177,7 +181,9 @@ class BienIciRent(_BaseBienIci):
         self.table_name = 'bien_ici_rent'
 
     def _extract_property_details(self, property_link: str, sb: Callable, target_url=False) -> dict:
-        property_dict, soup = super()._extract_property_details(property_link, sb, target_url)
+        property_dict, soup = super()._extract_property_details(property_link = property_link, sb = sb, target_url = target_url)
+        if not property_dict: # if url is invalid and details can't be extracted, return nothing
+            return {}
         monthly_rent = soup.find('span', class_=self.monthly_rent_selector)
         monthly_rent = monthly_rent.get_text(strip=True) if monthly_rent else ''
         property_dict['monthly_rent'] = monthly_rent
@@ -207,6 +213,8 @@ class BienIciBuy(_BaseBienIci):
 
     def _extract_property_details(self, property_link: str, sb: Callable, target_url=False) -> dict:
         property_dict, soup = super()._extract_property_details(property_link, sb, target_url)
+        if not property_dict: # if url is invalid and details can't be extracted, return nothing
+            return None
         price = soup.find(class_=self.price_header_selector)
         price = price.get_text(strip = True) if price else ''
         price_square_mtr = soup.find(class_=self.price_square_mtr_selector)
