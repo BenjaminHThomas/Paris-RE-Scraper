@@ -47,7 +47,7 @@ demo_mode = False
 
 4. Adjust main.py as needed:
 ```
-import scraper
+import BienIciScraper
 if __name__ == '__main__':
     rent_scraper = BienIciScraper.BienIciRent()
     rent_scraper.scrape() # Downloads data on properties for rent
