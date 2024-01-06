@@ -49,9 +49,11 @@ demo_mode = False
 ```
 import scraper
 if __name__ == '__main__':
-    myinstance = scraper.BieniciScraper()
-    myinstance.scrape('buy')
-    myinstance.scrape('rent')
+    rent_scraper = BienIciScraper.BienIciRent()
+    rent_scraper.scrape() # Downloads data on properties for rent
+
+    buy_scraper = BienIciScraper.BienIciBuy()
+    buy_scraper.scrape() # Downloads data on properties for sale
 ``` 
 
 5. Run the scraper:
@@ -63,9 +65,11 @@ python main.py
 
 To keep your records up-to-date, run the update_table function with either 'buy' or 'rent' to check if any details have changed or the property has been delisted.
 ```python 
-myinstance = scraper.BieniciScraper()
-myinstance.update_table('buy')
-myinstance.update_table('rent')
+rent_scraper = BienIciScraper.BienIciRent()
+rent_scraper.update_table() # Updates existing data in sql table
+
+buy_scraper = BienIciScraper.BienIciBuy()
+buy_scraper.update_table() # Updates existing data in sql table
 ```
 
 ## Usage
