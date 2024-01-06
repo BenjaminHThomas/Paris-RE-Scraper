@@ -68,8 +68,8 @@ def save_to_sql(table_name:str, data_list:list, buy_or_rent:str, cur, conn) -> N
     """)
 
     columns = {
-        'buy': ['price', 'price_square_mtr', 'size', 'rooms', 'bedrooms', 'bathrooms', 'floor', 'realtor', 'zip_code', 'url', 'property_id', 'timestamp','removed','updated'],
-        'rent':['monthly_rent', 'size', 'rooms', 'bedrooms', 'bathrooms', 'floor', 'realtor', 'zip_code', 'url', 'property_id', 'timestamp','removed','updated']
+        'buy': ['price', 'price_square_mtr', 'size', 'rooms', 'bedrooms', 'bathrooms', 'floor', 'realtor', 'zip_code', 'url', 'property_id', 'timestamp','removed'],
+        'rent':['monthly_rent', 'size', 'rooms', 'bedrooms', 'bathrooms', 'floor', 'realtor', 'zip_code', 'url', 'property_id', 'timestamp','removed']
     }
 
     values_placeholder = ', '.join(['%s'] * len(columns[buy_or_rent]))
