@@ -18,21 +18,21 @@ You can validate this by inspecting the webpage and searching for the missing el
 
 if __name__ == '__main__':
     # Seloger
-    # rent_scraper = SelogerRent()
-    # rent_scraper.scrape()
+    # seloger_rent = SelogerRent()
+    # seloger_rent.scrape()
 
-    # buy_scraper = SelogerBuy()
-    # buy_scraper.scrape()
+    # seloger_buy = SelogerBuy()
+    # seloger_buy.scrape()
 
 
     ## BienIci
-    # buy_scraper = BienIciBuy()
-    # buy_scraper.scrape()
-    # buy_scraper.update_table()
+    # bienici_buy = BienIciBuy()
+    # bienici_buy.scrape()
+    # bienici_buy.update_table()
 
-    # rent_scraper = BienIciRent()
-    # rent_scraper.scrape()
-    # rent_scraper.update_table()
+    # bienici_rent = BienIciRent()
+    # bienici_rent.scrape()
+    # bienici_rent.update_table()
     pass
 
 
