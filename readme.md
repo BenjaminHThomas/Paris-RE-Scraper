@@ -47,13 +47,21 @@ demo_mode = False
 
 4. Adjust main.py as needed:
 ```
-import BienIciScraper
-if __name__ == '__main__':
-    rent_scraper = BienIciScraper.BienIciRent()
-    rent_scraper.scrape() # Downloads data on properties for rent
+from BienIciScraper import BienIciBuy, BienIciRent
+from SelogerScraper import SelogerBuy, SelogerRent
 
-    buy_scraper = BienIciScraper.BienIciBuy()
-    buy_scraper.scrape() # Downloads data on properties for sale
+if __name__ == '__main__':
+    bienici_rent = BienIciRent()
+    bienici_rent.scrape() 
+
+    bienici_buy = BienIciBuy()
+    bienici_buy.scrape()
+
+    seloger_rent = SelogerRent()
+    seloger_rent.scrape()
+    
+    seloger_buy = SelogerBuy()
+    seloger_buy.scrape()
 ``` 
 
 5. Run the scraper:
@@ -64,12 +72,14 @@ python main.py
 6. Update your tables:
 
 To keep your records up-to-date, run the update_table function with either 'buy' or 'rent' to check if any details have changed or the property has been delisted.
-```python 
-rent_scraper = BienIciScraper.BienIciRent()
-rent_scraper.update_table() # Updates existing data in sql table
 
-buy_scraper = BienIciScraper.BienIciBuy()
-buy_scraper.update_table() # Updates existing data in sql table
+This isn't currently available for Seloger.
+```python 
+bienici_rent = BienIciRent()
+bienici_rent.update_table() # Updates existing data in sql table
+
+bienici_buy = BienIciBuy()
+bienici_buy.update_table() # Updates existing data in sql table
 ```
 
 ## Usage
