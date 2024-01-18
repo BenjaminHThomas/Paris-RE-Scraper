@@ -5,7 +5,7 @@
 ## Overview
 The paris-RE-Scraper is a Python-based web scraper designed to extract Paris real estate information from various websites and store it in a MySQL database. At this stage in development it's only set up to extract information from bienici.com and Seloger.com.
 
-If you're interested, you can find a workbook [here](https://github.com/BenjaminHThomas/paris-re-analysis/blob/main/exploration_1.ipynb) where I clean, analyse and model some of the data
+If you're interested, you can find a workbook [here](https://github.com/BenjaminHThomas/paris-re-analysis/blob/main/exploration_1.ipynb) where I clean, analyse and model some of the data.
 
 ## Pre-requisites:
 You need to have MySQL installed prior to running the code. You can find the installation guide [here.](https://dev.mysql.com/doc/mysql-installation-excerpt/5.7/en/)
